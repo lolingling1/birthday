@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>蓝颖，生日快乐！</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0f1013; }
+canvas { display: block; position: fixed; top: 0; left: 0; }
+#restart {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+  padding: 10px 24px; border-radius: 20px; font-size: 14px; cursor: pointer;
+  z-index: 10; display: none; font-family: 'PingFang SC','Microsoft YaHei',sans-serif;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="restart" onclick="restart()">再看一次</button>
+<script>
+// ── Canvas setup ──────────────────────────────────────────
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+let W, H;
+
+function resize() {
+  W = c.width = window.innerWidth;
+  H = c.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── State ────────────────────────────────────────────────
+let frame = 0;
+let startTime = null;
+const FPS = 60;
+
+// ── Color palette ────────────────────────────────────────
+const BG_DARK = '#0f1013';
+const WHITE = '#ffffff';
+const GOLD_LINE = '#ebc67b';
+const RED_STAR = '#c42e2b';
+
+const CANDLE_COLORS = {
+  '3': { body: '#32c5fe', wax: '#004bbe' },
+  '2': { body: '#2ed639', wax: '#007814' },
+  '1': { body: '#ffae33', wax: '#d26900' }
+};
+
+const TAG_COLORS = ['#f7a389','#aadea7','#a3cff5','#fdf19a','#f5b7d2','#cabff2'];
+const TAG_TEXT = '#141414';
+
+const BLESSINGS = [
+  '好好吃饭','别熬夜','早点休息','期待下次见面','开心快乐','今天过得开心吗',
+  '珍惜每一刻','保持好心情','好好爱自己','金榜题名','保持微笑','别太累了',
+  '每天都要元气满满','要相信自己哦','对自己好一点','好好照顾自己','学会爱自己',
+  '天冷了多穿衣服','偶尔偷懒也好','记得好好护肤','记得吃水果','我想你了',
+  '每天都要美美的','愿所有烦恼都消散','梦想成真','万事如意'
+];
+
+// ── Scene objects ─────────────────────────────────────────
+
+// Twinkle stars (Scene 2)
+class TwinkleStar {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = 2 + Math.random() * 3;
+    this.alpha = 100 + Math.random() * 155;
+    this.speed = 0.05 + Math.random() * 0.05;
+  }
+  update(t) {
+    this.alpha = 127 + 127 * Math.sin(t * this.speed * 0.001);
+  }
+  draw(ctx) {
+    const a = Math.max(0, Math.min(255, this.alpha)) / 255;
+    ctx.fillStyle = `rgba(255,255,200,${a})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Danmaku (Scene 2)
+class Danmaku {
+  constructor(y) {
+    this.text = 'Happy Birthday 蓝颖';
+    this.y = y;
+    const colors = ['#ffb6c1','#ffd700','#87cefa','#90ee90'];
+    this.color = colors[Math.floor(Math.random() * colors.length)];
+    this.x = W + Math.random() * 400;
+    this.speed = 3 + Math.random() * 3;
+    this.fontSize = Math.min(28, Math.max(18, W / 35));
+  }
+  update() {
+    this.x -= this.speed;
+    if (this.x < -ctx.measureText(this.text).width - 50) {
+      this.x = W + Math.random() * 300;
+    }
+  }
+  draw(ctx) {
+    ctx.font = `${this.fontSize}px "KaiTi","STKaiti","PingFang SC","Microsoft YaHei",serif`;
+    ctx.fillStyle = this.color;
+    ctx.fillText(this.text, this.x, this.y);
+  }
+}
+
+// Static tag (Scene 3)
+class StaticTag {
+  constructor(text, x, y, w, h, bg) {
+    this.text = text; this.x = x; this.y = y; this.w = w; this.h = h;
+    this.bg = bg; this.visible = false;
+    this.fontSize = Math.min(24, Math.max(14, W / 45));
+  }
+  draw(ctx) {
+    if (!this.visible) return;
+    ctx.fillStyle = this.bg;
+    ctx.beginPath();
+    const r = Math.min(6, W / 160);
+    this.roundRect(ctx, this.x, this.y, this.w, this.h, r);
+    ctx.fill();
+    ctx.fillStyle = TAG_TEXT;
+    ctx.font = `${this.fontSize}px "PingFang SC","Microsoft YaHei",sans-serif`;
+    ctx.fillText(this.text, this.x + 12, this.y + this.h / 2 + this.fontSize / 3);
+  }
+  roundRect(ctx, x, y, w, h, r) {
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+}
+
+// Background particle (Scene 4)
+class BgParticle {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    const colors = ['#ffffff','#ebc67b','#6496c8','#c86464'];
+    this.color = colors[Math.floor(Math.random() * colors.length)];
+    this.radius = 1.5 + Math.random() * 2;
+    this.vy = 0.5 + Math.random() * 1;
+  }
+  update() {
+    this.y += this.vy;
+    if (this.y > H) { this.y = -10; this.x = Math.random() * W; }
+  }
+  draw(ctx) {
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ── Pre-initialize objects ────────────────────────────────
+let twinkleStars = [];
+let danmakus = [];
+let staticTags = [];
+let bgParticles = [];
+
+function initObjects() {
+  twinkleStars = Array.from({length: 60}, () => new TwinkleStar());
+  danmakus = Array.from({length: Math.floor(H / 50)}, (_, i) => new Danmaku(60 + i * 50));
+
+  // Generate non-overlapping tags (Scene 3)
+  staticTags = [];
+  let attempts = 0;
+  while (staticTags.length < 45 && attempts < 1000) {
+    attempts++;
+    const txt = BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)];
+    const bg = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+    const fontSize = Math.min(24, Math.max(14, W / 45));
+    ctx.font = `${fontSize}px "PingFang SC","Microsoft YaHei",sans-serif`;
+    const tw = ctx.measureText(txt).width + 24;
+    const th = fontSize + 20;
+    const tx = 20 + Math.random() * (W - tw - 40);
+    const ty = 20 + Math.random() * (H - th - 40);
+    let overlap = false;
+    for (const tag of staticTags) {
+      if (!(tx + tw < tag.x || tag.x + tag.w < tx || ty + th < tag.y || tag.y + tag.h < ty)) {
+        overlap = true; break;
+      }
+    }
+    if (!overlap) staticTags.push(new StaticTag(txt, tx, ty, tw, th, bg));
+  }
+  bgParticles = Array.from({length: 80}, () => new BgParticle());
+}
+initObjects();
+window.addEventListener('resize', () => { resize(); initObjects(); });
+
+// ── Drawing helpers ──────────────────────────────────────
+
+function drawCandleFlame(ctx, x, y, t) {
+  const fw = 26 + 3 * Math.sin(t * 0.02);
+  const fh = 45 + 5 * Math.cos(t * 0.015);
+  // Outer flame
+  ctx.fillStyle = 'rgba(255,69,0,0.86)';
+  ctx.beginPath();
+  ctx.ellipse(x, y - fh / 2, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Inner flame
+  ctx.fillStyle = 'rgba(255,165,0,0.95)';
+  ctx.beginPath();
+  ctx.ellipse(x, y - fh / 2 + 5, (fw - 8) / 2, (fh - 10) / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Blue core
+  ctx.fillStyle = 'rgba(150,50,255,0.9)';
+  ctx.beginPath();
+  ctx.ellipse(x, y - fh / 2 + 8, 6, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawCandleNumber(ctx, numStr, bodyColor, waxColor, t) {
+  const fontSize = Math.min(180, Math.max(80, W / 5.5));
+  // Main number
+  ctx.fillStyle = bodyColor;
+  ctx.font = `italic bold ${fontSize}px "KaiTi","STKaiti","PingFang SC","Microsoft YaHei",serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const cx = W / 2, cy = H / 2 + 30;
+  ctx.fillText(numStr, cx, cy);
+
+  // Measure text rect
+  const metrics = ctx.measureText(numStr);
+  const tw = metrics.width;
+  const th = fontSize;
+  const left = cx - tw / 2, top = cy - th / 2;
+
+  // Wax layer
+  ctx.fillStyle = waxColor;
+  ctx.beginPath();
+  ctx.ellipse(cx, top + 18, tw / 2 - 10, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wick stick
+  ctx.strokeStyle = '#323232';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(cx, top + 15);
+  ctx.lineTo(cx, top - 15);
+  ctx.stroke();
+
+  // Flame
+  drawCandleFlame(ctx, cx, top - 12, t);
+
+  // White decorative dots
+  ctx.fillStyle = WHITE;
+  const dots = {
+    '3': [[0.3,0.25],[0.5,0.2],[0.7,0.28],[0.6,0.45],[0.45,0.55],[0.65,0.65],[0.7,0.78],[0.5,0.85],[0.3,0.82]],
+    '2': [[0.28,0.3],[0.45,0.2],[0.68,0.25],[0.65,0.42],[0.5,0.58],[0.35,0.72],[0.3,0.85],[0.5,0.85],[0.7,0.85]],
+    '1': [[0.4,0.25],[0.52,0.22],[0.52,0.4],[0.52,0.55],[0.52,0.7],[0.4,0.85],[0.52,0.85],[0.65,0.85]]
+  }[numStr] || [];
+  for (const [px, py] of dots) {
+    ctx.beginPath();
+    ctx.arc(left + tw * px, top + th * py, 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawStarPolygon(ctx, x, y, r) {
+  // 5-pointed star
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const rad = (i * Math.PI) / 5 - Math.PI / 2;
+    const radius = i % 2 === 0 ? r : r * 0.4;
+    pts.push([x + Math.cos(rad) * radius, y + Math.sin(rad) * radius]);
+  }
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawHandDrawnCake(ctx, cx, cy) {
+  const s = Math.min(W / 1000, H / 750, 1);
+  ctx.strokeStyle = GOLD_LINE;
+  ctx.lineWidth = 2 * s;
+  ctx.fillStyle = 'transparent';
+
+  // Candle line + flame rays
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 130 * s);
+  ctx.lineTo(cx, cy - 165 * s);
+  ctx.stroke();
+
+  for (let a = 0; a < 360; a += 45) {
+    const rad = a * Math.PI / 180;
+    const sx = cx + 15 * s * Math.cos(rad);
+    const sy = (cy - 180 * s) + 15 * s * Math.sin(rad);
+    const ex = cx + 28 * s * Math.cos(rad);
+    const ey = (cy - 180 * s) + 28 * s * Math.sin(rad);
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  }
+
+  // Flame body
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 188 * s, 8 * s, 12 * s, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Upper cake layer (small)
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 130 * s, 70 * s, 15 * s, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx - 70 * s, cy - 115 * s); ctx.lineTo(cx - 70 * s, cy - 70 * s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + 70 * s, cy - 115 * s); ctx.lineTo(cx + 70 * s, cy - 70 * s); ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 85 * s, 70 * s, 15 * s, 0, Math.PI, 2 * Math.PI);
+  ctx.stroke();
+
+  // Upper wave decoration
+  for (let x = cx - 60 * s; x < cx + 70 * s; x += 20 * s) {
+    ctx.beginPath();
+    ctx.arc(x, cy - 110 * s, 10 * s, Math.PI, 2 * Math.PI);
+    ctx.stroke();
+  }
+
+  // Lower cake layer (large)
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 70 * s, 120 * s, 20 * s, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx - 120 * s, cy - 50 * s); ctx.lineTo(cx - 120 * s, cy + 20 * s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + 120 * s, cy - 50 * s); ctx.lineTo(cx + 120 * s, cy + 20 * s); ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 120 * s, 20 * s, 0, Math.PI, 2 * Math.PI);
+  ctx.stroke();
+
+  // Lower wave decoration
+  for (let x = cx - 110 * s; x < cx + 120 * s; x += 24 * s) {
+    ctx.beginPath();
+    ctx.arc(x, cy - 45 * s, 12 * s, Math.PI, 2 * Math.PI);
+    ctx.stroke();
+  }
+
+  // Plate base
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 15 * s, 140 * s, 18 * s, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+// ── Main animation loop ──────────────────────────────────
+function animate(timestamp) {
+  if (!startTime) startTime = timestamp;
+  frame = Math.floor((timestamp - startTime) / (1000 / FPS));
+  const t = timestamp;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = BG_DARK;
+  ctx.fillRect(0, 0, W, H);
+
+  // ============ Scene 1: Candle countdown (0 ~ 4.5s, 270 frames) ============
+  if (frame < 270) {
+    let numStr, bodyColor, waxColor;
+    if (frame < 90) {
+      numStr = '3'; bodyColor = CANDLE_COLORS['3'].body; waxColor = CANDLE_COLORS['3'].wax;
+    } else if (frame < 180) {
+      numStr = '2'; bodyColor = CANDLE_COLORS['2'].body; waxColor = CANDLE_COLORS['2'].wax;
+    } else {
+      numStr = '1'; bodyColor = CANDLE_COLORS['1'].body; waxColor = CANDLE_COLORS['1'].wax;
+    }
+    drawCandleNumber(ctx, numStr, bodyColor, waxColor, t);
+
+    // Decorative red star background
+    ctx.fillStyle = RED_STAR;
+    const sr = Math.min(30, W / 33);
+    drawStarPolygon(ctx, 80, 90, sr);
+  }
+
+  // ============ Scene 2: Twinkle stars + danmaku (4.5 ~ 8.5s, frames 270~510) ============
+  else if (frame < 510) {
+    for (const s of twinkleStars) { s.update(t); s.draw(ctx); }
+    for (const d of danmakus) { d.update(); d.draw(ctx); }
+  }
+
+  // ============ Scene 3: Tag wall slowly appearing (8.5 ~ 12s, frames 510~720) ============
+  else if (frame < 720) {
+    const visibleCount = Math.floor((frame - 510) * 0.25);
+    for (let i = 0; i < staticTags.length; i++) {
+      if (i < visibleCount) staticTags[i].visible = true;
+      staticTags[i].draw(ctx);
+    }
+  }
+
+  // ============ Scene 4: Finale - Cake + particles + blessings ============
+  else {
+    // Falling particles
+    for (const p of bgParticles) { p.update(); p.draw(ctx); }
+
+    // Red stars in background
+    const starPositions = [[150, 220], [W - 140, 200], [W - 120, 600], [350, 300]];
+    ctx.fillStyle = RED_STAR;
+    for (const [sx, sy] of starPositions) {
+      const r = Math.min(25, W / 40);
+      drawStarPolygon(ctx, sx, sy, r);
+      ctx.fillStyle = WHITE;
+      ctx.beginPath();
+      ctx.arc(sx - 4, sy + 2, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = RED_STAR;
+    }
+
+    // Hand-drawn cake
+    drawHandDrawnCake(ctx, W / 2, 420);
+
+    // Title
+    const titleSize = Math.min(50, Math.max(28, W / 20));
+    ctx.fillStyle = WHITE;
+    ctx.font = `italic bold ${titleSize}px "KaiTi","STKaiti","PingFang SC","Microsoft YaHei",serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Happy Birthday 蓝颖', W / 2, 130);
+    ctx.textAlign = 'start';
+
+    // Decorative arc under title
+    ctx.strokeStyle = '#f5b7d2';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(W / 2, 155, Math.min(120, W / 8), Math.PI, 0);
+    ctx.stroke();
+
+    // Left blessings
+    const leftText1 = '“美好的事物';
+    const leftText2 = '一定会在新的一年如约而至”';
+    const sideSize = Math.min(28, Math.max(18, W / 35));
+    ctx.fillStyle = WHITE;
+    ctx.font = `italic ${sideSize}px "KaiTi","STKaiti","PingFang SC","Microsoft YaHei",serif`;
+    ctx.fillText(leftText1, 30, 400);
+    ctx.fillText(leftText2, 30, 450);
+
+    // Right blessing
+    const rightText = '奔赴新的岁岁！';
+    const rightSize = Math.min(50, Math.max(28, W / 20));
+    ctx.font = `italic bold ${rightSize}px "KaiTi","STKaiti","PingFang SC","Microsoft YaHei",serif`;
+    const rw = ctx.measureText(rightText).width;
+    ctx.fillText(rightText, W - rw - 30, 420);
+  }
+
+  // Show restart button after full animation (~14s)
+  const restartBtn = document.getElementById('restart');
+  if (frame > 800) {
+    restartBtn.style.display = 'block';
+  } else {
+    restartBtn.style.display = 'none';
+  }
+
+  requestAnimationFrame(animate);
+}
+
+function restart() {
+  startTime = null;
+  frame = 0;
+  initObjects();
+  document.getElementById('restart').style.display = 'none';
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
